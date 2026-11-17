@@ -79,10 +79,43 @@ def materialize(path, expected_sha, expected_size):
             os.unlink(destination)
 
 
+def add_local_lfs_attributes(pointer_files):
+    """Make materialized but untracked LFS files appear clean to repo sync."""
+    result = subprocess.run(
+        ["git", "-C", str(REPO), "rev-parse", "--git-path", "info/attributes"],
+        check=True,
+        text=True,
+        capture_output=True,
+    )
+    info_path = Path(result.stdout.strip())
+    if not info_path.is_absolute():
+        info_path = (REPO / info_path).resolve()
+    info_path.parent.mkdir(parents=True, exist_ok=True)
+    existing = info_path.read_text() if info_path.exists() else ""
+    additions = []
+    for path, _, _ in pointer_files:
+        relative = path.relative_to(REPO).as_posix()
+        attr = subprocess.run(
+            ["git", "-C", str(REPO), "check-attr", "filter", "--", relative],
+            check=True, capture_output=True, text=True
+        ).stdout.strip()
+        if not attr.endswith(": lfs"):
+            if " " in relative or "\t" in relative:
+                raise RuntimeError(f"Unexpected whitespace in GMS LFS path: {relative}")
+            additions.append(f"/{relative} filter=lfs diff=lfs merge=lfs -text")
+    if additions:
+        with info_path.open("a") as stream:
+            if existing and not existing.endswith("\n"):
+                stream.write("\n")
+            stream.write("\n".join(additions) + "\n")
+        print(f"Registered {len(additions)} missing local Git LFS attributes")
+
+
 def main():
     if not REPO.is_dir():
         raise RuntimeError("vendor/gms not found. Sync Evolution X first.")
     pointer_files = list(find_pointers())
+    add_local_lfs_attributes(pointer_files)
     if not pointer_files:
         print("Evolution X vendor/gms: no unresolved LFS pointers found.")
         return
