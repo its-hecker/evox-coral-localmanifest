@@ -7,6 +7,7 @@ set -euo pipefail
 
 git -C kernel/google/msm-4.14 submodule update --init --recursive
 git -C vendor/google/coral lfs pull
+python3 .repo/local_manifests/repair-gms-lfs.py
 
 python3 device/google/coral/faceunlock/tools/apply_framework_fixes.py --check
 python3 device/google/coral/faceunlock/tools/apply_framework_fixes.py --apply
